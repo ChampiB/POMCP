@@ -6,7 +6,7 @@ import math
 if __name__ == "__main__":
 
     # Create the environment
-    LAKE_FILE_NAME = "2.lake"
+    LAKE_FILE_NAME = "5.lake"
     env = LakeEnv("./lakes/" + LAKE_FILE_NAME)
     S = env.states_list()
     A = env.actions_list()
@@ -16,7 +16,7 @@ if __name__ == "__main__":
     NB_SIMULATIONS = 100
     NB_ACTION_PERCEPTION_CYCLES = 30
     GAMMA = 0.9
-    TIMEOUT = 2000
+    TIMEOUT = 1000
     NO_PARTICLES = 100
     EXP_CONST = 3
 
@@ -32,11 +32,9 @@ if __name__ == "__main__":
 
         # Action-perception cycles
         start = time.time()
-        # env.render()  # TODO
         for t in range(0, NB_ACTION_PERCEPTION_CYCLES):
             action = agent.search()
             obs, _, done = env.step(action)
-            # env.render()  # TODO
             if done:
                 break
             agent.update_belief(action, obs)

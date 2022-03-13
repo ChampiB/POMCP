@@ -109,9 +109,9 @@ class POMCP:
 
         # Pick random action
         action = choice(self.actions)
-
-        # Generate states and observations
         sample_state, _, r = self.generator(s, action)
+
+        # Compute action's value
         return r + self.gamma * self.rollout(sample_state, depth + 1)
 
     def simulate(self, s, h, depth):
