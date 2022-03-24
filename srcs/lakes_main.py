@@ -1,9 +1,14 @@
 from srcs.environments.LakeEnv import LakeEnv
 from srcs.agent.POMCP import POMCP
+from srcs.agent.POMCP import RolloutPolicy
 import time
 import math
+import sys
 
 if __name__ == "__main__":
+
+    # Set the maximum number of recursive calls
+    sys.setrecursionlimit(10 ** 6)
 
     # Create the environment
     LAKE_FILE_NAME = "5.lake"
@@ -15,10 +20,12 @@ if __name__ == "__main__":
     # Hyper-parameters
     NB_SIMULATIONS = 100
     NB_ACTION_PERCEPTION_CYCLES = 30
-    GAMMA = 0.9
+    GAMMA = 1
     TIMEOUT = 1000
     NO_PARTICLES = 100
     EXP_CONST = 3
+    ROLLOUT_DEPTH = 15  # ROLLOUT_DEPTH should be set to a negative value if gamma < 1
+    POLICY_ROLLOUT_TYPE = RolloutPolicy.ACTION_MAX_REWARD
 
     # Performance tracking variables
     exec_times = []
@@ -28,13 +35,19 @@ if __name__ == "__main__":
     for j in range(0, NB_SIMULATIONS):
 
         # Create the agent
-        agent = POMCP(S, A, O, env, c=EXP_CONST, gamma=GAMMA, timeout=TIMEOUT, no_particles=NO_PARTICLES)
+        agent = POMCP(
+            S, A, O, env, c=EXP_CONST, gamma=GAMMA, timeout=TIMEOUT,
+            no_particles=NO_PARTICLES, rollout_depth=ROLLOUT_DEPTH,
+            policy_rollout_type=POLICY_ROLLOUT_TYPE
+        )
 
         # Action-perception cycles
         start = time.time()
+        env.render()
         for t in range(0, NB_ACTION_PERCEPTION_CYCLES):
             action = agent.search()
             obs, _, done = env.step(action)
+            env.render()
             if done:
                 break
             agent.update_belief(action, obs)
@@ -55,6 +68,7 @@ if __name__ == "__main__":
     print("TIMEOUT={}".format(TIMEOUT))
     print("NO_PARTICLES={}".format(NO_PARTICLES))
     print("EXP_CONST={}".format(EXP_CONST))
+    print("ROLLOUT_DEPTH={}".format(ROLLOUT_DEPTH))
     print()
 
     # Display execution time and performance of the POMCP agent

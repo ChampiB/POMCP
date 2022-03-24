@@ -152,7 +152,7 @@ class LakeEnv:
         :return: nothing.
         """
         if self.viewer is None:
-            self.viewer = DefaultViewer("Maze", round(self.last_r, 5), self.current_frame(), resize_type=Image.NEAREST)
+            self.viewer = DefaultViewer("Lake", round(self.last_r, 5), self.current_frame(), resize_type=Image.NEAREST)
         else:
             self.viewer.update(round(self.last_r, 5), self.current_frame())
 

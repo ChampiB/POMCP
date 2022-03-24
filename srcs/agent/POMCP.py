@@ -2,6 +2,17 @@ from numpy.random import choice
 from srcs.agent.Tree import Tree
 from srcs.agent.auxilliary import ucb
 from srcs.agent.auxilliary import NodeAttr as NodeAttr
+from enum import IntEnum
+
+
+#
+# An enum for the type of rollout policy to be used.
+#
+class RolloutPolicy(IntEnum):
+    RANDOM_ACTION = 0
+    RANDOM_ACTION_AVOIDING_HOLES = 1
+    ACTION_MAX_REWARD_AVOIDING_HOLES = 2
+    ACTION_MAX_REWARD = 3
 
 
 #
@@ -9,7 +20,8 @@ from srcs.agent.auxilliary import NodeAttr as NodeAttr
 #
 class POMCP:
 
-    def __init__(self, states, actions, obs, generator, gamma=0.95, c=1, threshold=0.005, timeout=10000, no_particles=1200):
+    def __init__(self, states, actions, obs, generator, gamma=0.95, c=1, threshold=0.005,
+                 timeout=10000, no_particles=1200, rollout_depth=-1, policy_rollout_type=RolloutPolicy.ACTION_MAX_REWARD):
         """
         Construct the POMCP agent
         :param states: the set of all possible states
@@ -21,11 +33,13 @@ class POMCP:
         :param threshold: the threshold below which discount is too small
         :param timeout: the number of runs from node
         :param no_particles: the number of particle in the filter
+        :param rollout_depth: the depth of rollouts, -1 means unused
+        :param policy_rollout_type: the type of rollout policy to use.
         """
 
         # Check that the parameters are valid.
-        if gamma >= 1:
-            raise ValueError("gamma should be less than 1.")
+        if gamma < 0 or gamma > 1:
+            raise ValueError("Gamma should between zero and one.")
 
         # Initialize the attributes.
         self.gamma = gamma
@@ -34,10 +48,12 @@ class POMCP:
         self.c = c
         self.timeout = timeout
         self.no_particles = no_particles
+        self.rollout_depth = rollout_depth
         self.tree = Tree()
         self.states = states
         self.actions = actions
         self.observations = obs
+        self.policy_rollout_type = policy_rollout_type
 
     def best_child(self, node, use_ucb=True):
         """
@@ -95,24 +111,102 @@ class POMCP:
         # Get best action
         return self.best_child(-1, use_ucb=False)[0]
 
-    def rollout(self, s, depth):
+    def rollout(self, s, depth, rollout_depth):
         """
         Perform a roolout run from state 's'
         :param s: the state from which the rollout must be performed
-        :param depth: the current depth of the rollout
+        :param depth: the depth from the node representing the current state S_t
+        :param rollout_depth: the current depth of the rollout
         :return: the value of the rollout run
         """
+
+        # Chech if rollout max depth has been reached
+        if 0 < self.rollout_depth <= rollout_depth:
+            return 0
 
         # Check significance of update
         if (self.gamma ** depth < self.e or self.gamma == 0) and depth != 0:
             return 0
 
-        # Pick random action
-        action = choice(self.actions)
-        sample_state, _, r = self.generator(s, action)
+        # Select an action according to the rollout policy, and retrieve new state and reward
+        state, reward = self.rollout_policy(self.policy_rollout_type, s)
 
         # Compute action's value
-        return r + self.gamma * self.rollout(sample_state, depth + 1)
+        return reward + self.gamma * self.rollout(state, depth + 1, rollout_depth + 1)
+
+    def rollout_policy(self, rollout_policy_type, state):
+        """
+        Perform an action according to the rollout policy requested in input.
+        :param rollout_policy_type: the type of rollout policy to use.
+        :param state: the current state from which the action is performed.
+        :return: the state and reward following the action performed.
+        """
+        policies = [
+            self.rollout_policy_random_action,
+            self.rollout_policy_random_action_avoiding_holes,
+            self.rollout_policy_max_reward_avoiding_holes,
+            self.rollout_policy_max_reward
+        ]
+        return policies[rollout_policy_type](state)
+
+    def rollout_policy_random_action(self, state):
+        """
+        Select a random action.
+        :param state: the current state.
+        :return: the next state and reward.
+        """
+        action = choice(self.actions)
+        state, _, r = self.generator(state, action)
+        return state, r
+
+    def rollout_policy_random_action_avoiding_holes(self, state):
+        """
+        Select a random action that does not lead into a hole.
+        :param state: the current state.
+        :return: the next state and reward.
+        """
+        r = -1
+        sample_state = state
+        while r == -1:
+            action = choice(self.actions)
+            sample_state, _, r = self.generator(state, action)
+        return sample_state, r
+
+    def rollout_policy_max_reward_avoiding_holes(self, state):
+        """
+        Select the action that seems to lead to the highest reward and avoid holes.
+        :param state: the current state.
+        :return: the next state and reward.
+        """
+        i = 0
+        best_s = state
+        best_r = -1
+        while best_r == -1 or i < 10:
+            action = choice(self.actions)
+            sample_state, _, r = self.generator(state, action)
+            if r > best_r:
+                best_r = r
+                best_s = sample_state
+            i += 1
+        return best_s, best_r
+
+    def rollout_policy_max_reward(self, state):
+        """
+        Select the action that seems to lead to the highest reward.
+        :param state: the current state.
+        :return: the next state and reward.
+        """
+        i = 0
+        best_s = state
+        best_r = -1
+        while i < 10:
+            action = choice(self.actions)
+            sample_state, _, r = self.generator(state, action)
+            if r > best_r:
+                best_r = r
+                best_s = sample_state
+            i += 1
+        return best_s, best_r
 
     def simulate(self, s, h, depth):
         """
@@ -130,12 +224,12 @@ class POMCP:
         # If the current node is a leaf of the tree
         if self.tree.is_leaf_node(h):
 
-            # Exapand all possible actions
+            # Expand all possible actions
             for action in self.actions:
                 self.tree.expand_tree_from(h, action, is_action=True)
 
             # Perform a rollout to evaluate the value of the current state
-            return self.rollout(s, depth)
+            return self.rollout(s, depth, 0)
 
         # Get best action and associated tree's node
         best_action, best_node = self.best_child(h)
